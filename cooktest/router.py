@@ -384,7 +384,6 @@ def get_my_likes(event_id: int, current_user: str = Depends(get_current_user)) -
         rows = cur.fetchall()
     return {"liked_post_ids": [row["post_id"] for row in rows]}
 
-# 수정
 @router.get("/users/{user_id}/cooktest-posts")
 @router.get("/cooktest/users/{user_id}/posts")
 def list_user_cooktest_posts(user_id: str, request: Request) -> Dict[str, Any]:
