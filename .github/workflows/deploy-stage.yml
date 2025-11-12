@@ -1,15 +1,8 @@
-name: deploy-stage (backend)
+name: deploy-stage
 
 on:
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "ECR image tag to deploy (default: 'stage')"
-        required: false
-        type: string
-  workflow_run:
-    workflows: ["backend-ecr"]     # ✅ 프런트 이름/다른 워크플로 절대 넣지 말기
-    types: [completed]
+  workflow_call: {}
+  workflow_dispatch: {}
 
 concurrency:
   group: cookus-deploy-stage
@@ -17,68 +10,20 @@ concurrency:
 
 jobs:
   deploy:
-    # ✅ 반드시 backend-ecr run이 success이고, main 브랜치인 경우만
-    if: >
-      ${{
-        (github.event_name == 'workflow_dispatch')
-        || (
-          github.event_name == 'workflow_run'
-          && github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.head_branch == 'main'
-        )
-      }}
     runs-on: ubuntu-latest
-
     env:
       EC2_USER: ec2-user
       EC2_HOST_RAW: ${{ secrets.EC2_HOST }}
-      IMAGE_TAG_INPUT: ${{ github.event.inputs.image_tag || '' }}
-      IMAGE_TAG_HEADSHA: ${{ github.event.workflow_run.head_sha || '' }}
-      AWS_REGION: ap-northeast-2
-      ECR_REPO: cookus-backend
 
     steps:
-      - name: Normalize host & guard secrets
+      - name: Guard secrets & normalize host
         run: |
           set -euo pipefail
           [ -n "${EC2_HOST_RAW:-}" ] || { echo "::error::EC2_HOST is empty"; exit 1; }
-          CLEANED="$(printf '%s' "${EC2_HOST_RAW}" | tr -d '\r' | xargs)"
-          [ -n "$CLEANED" ] || { echo "::error::EC2_HOST trimmed empty"; exit 1; }
-          echo "EC2_HOST=$CLEANED" >> $GITHUB_ENV
+          H="$(printf '%s' "${EC2_HOST_RAW}" | tr -d '\r' | xargs)"
+          [ -n "$H" ] || { echo "::error::EC2_HOST trimmed empty"; exit 1; }
+          echo "EC2_HOST=$H" >> $GITHUB_ENV
           [ -n "${{ secrets.EC2_SSH_KEY }}" ] || { echo "::error::EC2_SSH_KEY is empty"; exit 1; }
-
-      - name: Decide IMAGE_TAG (head_sha > input > stage)
-        run: |
-          set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ] && [ -n "${IMAGE_TAG_HEADSHA}" ]; then
-            TAG="${IMAGE_TAG_HEADSHA}"
-          elif [ -n "${IMAGE_TAG_INPUT}" ]; then
-            TAG="${IMAGE_TAG_INPUT}"
-          else
-            TAG="stage"
-          fi
-          echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
-          echo "Deploy tag: $TAG"
-
-      # ✅ 여기서 '해당 태그 이미지가 ECR에 정말 존재하는지' 확인
-      - name: Verify image exists in ECR (hard gate)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Check ECR for tag
-        run: |
-          set -euo pipefail
-          if ! aws ecr describe-images \
-              --repository-name "${ECR_REPO}" \
-              --image-ids imageTag="${IMAGE_TAG}" \
-              --region "${AWS_REGION}" \
-              --query 'imageDetails[0].imageDigest' --output text >/dev/null 2>&1; then
-            echo "::warning::ECR image tag '${IMAGE_TAG}' not found. Skipping deploy."
-            # neutral 종료(실패 아님): 배포 선행조건 미충족
-            exit 78
-          fi
-          echo "ECR image exists ✓"
 
       - name: Write SSH key
         run: |
@@ -87,44 +32,12 @@ jobs:
           chmod 600 key.pem
 
       - name: Test SSH
-        run: |
-          ssh -o StrictHostKeyChecking=accept-new -i key.pem "${EC2_USER}@${EC2_HOST}" "echo connected"
+        run: ssh -o StrictHostKeyChecking=accept-new -i key.pem "${EC2_USER}@${EC2_HOST}" "echo connected"
 
-      # 원격 스크립트 생성/갱신 (항상 최신 내용 보장)
-      - name: Ensure /home/ec2-user/deploy_stage.sh exists
-        run: |
-          ssh -o StrictHostKeyChecking=accept-new -i key.pem "${EC2_USER}@${EC2_HOST}" 'bash -lc "
-cat > /home/ec2-user/deploy_stage.sh <<\"EOF\"
-
-set -euo pipefail
-REGION=\"${AWS_REGION}\"
-ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)
-REPO=\"\$ACCOUNT_ID.dkr.ecr.\$REGION.amazonaws.com/${ECR_REPO}\"
-TAG=\"\${IMAGE_TAG:-stage}\"
-
-aws ecr get-login-password --region \"\$REGION\" \
-  | docker login --username AWS --password-stdin \"\$ACCOUNT_ID.dkr.ecr.\$REGION.amazonaws.com\"
-
-docker pull \"\$REPO:\$TAG\"
-docker stop backend || true
-docker rm backend || true
-docker run -d --name backend --restart=always \
-  -p 8000:8000 \
-  --env-file /etc/cookus/backend.env \
-  -e BUILD_SHA=\"\$TAG\" \
-  \"\$REPO:\$TAG\"
-
-curl -fsS http://127.0.0.1:8000/health >/dev/null
-EOF
-sed -i 's/\r$//' /home/ec2-user/deploy_stage.sh
-chmod +x /home/ec2-user/deploy_stage.sh
-"'
-
-      - name: Run deploy (with IMAGE_TAG)
+      - name: Run deploy script (.sh exists on EC2)
         run: |
           ssh -o StrictHostKeyChecking=accept-new -i key.pem "${EC2_USER}@${EC2_HOST}" \
-            'IMAGE_TAG='"${IMAGE_TAG}"' bash -lc "bash /home/ec2-user/deploy_stage.sh"'
+            'bash -lc "bash /home/ec2-user/deploy_stage.sh"'
 
       - name: External health check
-        run: |
-          curl -fsSI "http://${EC2_HOST}/api/health" | head -n 1
+        run: curl -fsSI "http://${EC2_HOST}/api/health" | head -n 1
