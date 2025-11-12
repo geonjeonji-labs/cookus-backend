@@ -1,0 +1,27 @@
+name: api-ecr
+on:
+  push:
+    branches: [ main ]
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPO: cookus-backend
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions: { id-token: write, contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t api:${{ github.sha }} .
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Push to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR="$ACCOUNT_ID.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}"
+          docker tag api:${{ github.sha }} $ECR:${{ github.sha }}
+          docker tag api:${{ github.sha }} $ECR:stage
+          docker push $ECR:${{ github.sha }}
+          docker push $ECR:stage
