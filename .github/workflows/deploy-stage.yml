@@ -20,41 +20,50 @@ jobs:
       EC2_USER: ec2-user
 
     steps:
-      - name: Fail fast if secrets missing  # ✅ 비어있으면 즉시 실패
-        run: |
-          set -euo pipefail
-          [ -n "${EC2_HOST_RAW:-}" ] || { echo "::error::EC2_HOST is empty (check repo Secrets value)"; exit 1; }
-          [ -n "${{ secrets.EC2_SSH_KEY }}" ] || { echo "::error::EC2_SSH_KEY is empty"; exit 1; }
-          echo "Secrets exist ✓"
-
-      - name: Normalize EC2_HOST  # ✅ CR/LF·앞뒤 공백 제거
-        id: norm
-        run: |
-          set -euo pipefail
-          CLEANED="$(printf '%s' "${EC2_HOST_RAW}" | tr -d '\r' | xargs)"
-          [ -n "$CLEANED" ] || { echo "::error::EC2_HOST trimmed to empty (hidden whitespace?)"; exit 1; }
-          echo "len_before=${#EC2_HOST_RAW}" >> $GITHUB_OUTPUT
-          echo "len_after=${#CLEANED}" >> $GITHUB_OUTPUT
-          echo "EC2_HOST=$CLEANED" >> $GITHUB_ENV
-          echo "Normalized host ✓"
-
-      - name: Show sanitized lengths (no secret leak)
-        run: |
-          echo "len_before=${{ steps.norm.outputs.len_before }}, len_after=${{ steps.norm.outputs.len_after }}"
-
-      - name: Write SSH key
+      # (추가) 원격에 deploy_stage.sh를 생성하고 실행권한 부여
+      - name: Ensure deploy_stage.sh exists and up to date  # ← NEW
         run: |
           umask 077
           printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > key.pem
           chmod 600 key.pem
-
-      - name: Test SSH connectivity  # ✅ 어디서 막히는지 즉시 확인
-        run: |
-          set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -i key.pem "${EC2_USER}@${EC2_HOST}" "echo connected: $(hostname)"
-
+          ssh -o StrictHostKeyChecking=accept-new -i key.pem "${{ env.EC2_USER }}@${{ env.EC2_HOST }}" 'bash -lc " cat > /home/ec2-user/deploy_stage.sh <<\"EOF\"
+      #!/usr/bin/env bash
+      set -euo pipefail
+      
+      REGION=\"ap-northeast-2\"
+      ACCOUNT_ID=\$(aws sts get-caller-identity --query Account --output text)
+      REPO=\"\$ACCOUNT_ID.dkr.ecr.\$REGION.amazonaws.com/cookus-backend\"
+      
+      # Actions에서 넘겨줄 태그(없으면 stage)
+      TAG=\"\${IMAGE_TAG:-stage}\"
+      
+      echo \"[deploy] repo=\$REPO tag=\$TAG\"
+      
+      aws ecr get-login-password --region \"\$REGION\" \
+        | docker login --username AWS --password-stdin \"\$ACCOUNT_ID.dkr.ecr.\$REGION.amazonaws.com\"
+      
+      docker pull \"\$REPO:\$TAG\"
+      docker stop backend || true
+      docker rm backend || true
+      
+      docker run -d --name backend --restart=always \
+        -p 8000:8000 \
+        --env-file /etc/cookus/backend.env \
+        -e BUILD_SHA=\"\$TAG\" \
+        \"\$REPO:\$TAG\"
+      
+      # 내부 헬스체크
+      curl -fsS http://127.0.0.1:8000/health >/dev/null
+      echo \"[ok] deployed \$REPO:\$TAG\"
+      EOF
+      chmod +x /home/ec2-user/deploy_stage.sh
+      "'
+      
+      # (기존) 원격 스크립트 호출 — IMAGE_TAG를 넘겨 실행
       - name: Run remote deploy script on EC2
+        env:
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || 'stage' }}  # 없으면 stage
         run: |
-          set -euo pipefail
-          ssh -o StrictHostKeyChecking=accept-new -i key.pem "${EC2_USER}@${EC2_HOST}" \
-            'bash -lc "/home/ec2-user/deploy_stage.sh"'
+          ssh -o StrictHostKeyChecking=accept-new -i key.pem "${{ env.EC2_USER }}@${{ env.EC2_HOST }}" \
+            'IMAGE_TAG='"${IMAGE_TAG}"' bash -lc "/home/ec2-user/deploy_stage.sh"'
+      
