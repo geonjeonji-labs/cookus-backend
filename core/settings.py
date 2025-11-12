@@ -48,7 +48,7 @@ class Settings:
 
     @property
     def cors_origins(self) -> List[str]:
-        default_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+        default_origins = ["http://localhost:5173", "http://127.0.0.1:5173", "http://43.203.1.85"]
         custom_origins = os.getenv("CORS_ORIGINS")
         if not custom_origins:
             return default_origins
