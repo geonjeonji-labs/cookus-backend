@@ -11,7 +11,7 @@ jobs:
     permissions: { id-token: write, contents: read }
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t api:${{ github.sha }} -f cookus-backend/Dockerfile cookus-backend/
+      - run: docker build -t api:${{ github.sha }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
