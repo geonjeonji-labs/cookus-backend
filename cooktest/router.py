@@ -388,18 +388,17 @@ def get_my_likes(event_id: int, current_user: str = Depends(get_current_user)) -
 @router.get("/users/{user_id}/cooktest-posts")
 @router.get("/cooktest/users/{user_id}/posts")
 def list_user_cooktest_posts(user_id: str, request: Request) -> Dict[str, Any]:
-    variants = _user_id_variants(user_id)
-    if not variants:
-        variants = [user_id]
-    placeholders = ", ".join(["%s"] * len(variants))
+    target = str(user_id).strip()
     viewer = _get_optional_user(request)
+    viewer_id = str(viewer["user_id"]).strip() if viewer and "user_id" in viewer and viewer["user_id"] is not None else None
+
     like_join = ""
     like_select = "0 AS liked_by_me"
-    params: List[Any] = list(variants)
-    if viewer:
+    params_posts: List[Any] = [target]
+    if viewer_id:
         like_join = " LEFT JOIN board_likes bl ON bl.content_id = b.content_id AND bl.user_id=%s"
         like_select = "CASE WHEN bl.user_id IS NULL THEN 0 ELSE 1 END AS liked_by_me"
-        params.append(viewer)
+        params_posts.append(viewer_id)
 
     with get_conn() as conn, conn.cursor() as cur:
         sql_posts = f"""
@@ -419,7 +418,7 @@ def list_user_cooktest_posts(user_id: str, request: Request) -> Dict[str, Any]:
             JOIN event e ON e.event_id = b.event_id
             LEFT JOIN user_profile up ON up.user_id = b.user_id
             {like_join}
-            WHERE b.user_id IN ({placeholders})
+            WHERE b.user_id = %s
             ORDER BY b.like_count DESC, b.created_at DESC
         """
         sql_posts_no_profile = f"""
@@ -438,14 +437,14 @@ def list_user_cooktest_posts(user_id: str, request: Request) -> Dict[str, Any]:
             FROM board b
             JOIN event e ON e.event_id = b.event_id
             {like_join}
-            WHERE b.user_id IN ({placeholders})
+            WHERE b.user_id = %s
             ORDER BY b.like_count DESC, b.created_at DESC
         """
         try:
-            cur.execute(sql_posts, tuple(params))
+            cur.execute(sql_posts, tuple(params_posts))
         except ProgrammingError as exc:
             if exc.args and exc.args[0] == 1146:
-                cur.execute(sql_posts_no_profile, tuple(params))
+                cur.execute(sql_posts_no_profile, tuple(params_posts))
             else:
                 raise
         rows = cur.fetchall()
@@ -457,7 +456,7 @@ def list_user_cooktest_posts(user_id: str, request: Request) -> Dict[str, Any]:
             posts.append(row)
 
         cur.execute(
-            f"""
+            """
             SELECT DISTINCT
               e.event_id,
               e.event_name,
@@ -465,10 +464,10 @@ def list_user_cooktest_posts(user_id: str, request: Request) -> Dict[str, Any]:
               e.end_date
             FROM event e
             JOIN board b ON b.event_id = e.event_id
-            WHERE b.user_id IN ({placeholders})
+            WHERE b.user_id = %s
             ORDER BY e.start_date DESC
             """,
-            tuple(variants),
+            (target,),
         )
         events = cur.fetchall()
 
