@@ -1,4 +1,4 @@
-name: back-ecr
+name: backend-ecr
 on:
   push:
     branches: [ main ]
