@@ -54,7 +54,6 @@ class Settings:
             return default_origins
         return [origin.strip() for origin in custom_origins.split(",") if origin.strip()]
 
-
 settings = Settings()
 
 
