@@ -56,7 +56,6 @@ class Settings:
 
 settings = Settings()
 
-
 print(f"[AUTH-BOOT] algo={settings.jwt_algorithm} secret={settings.jwt_secret[:3]}*** len={len(settings.jwt_secret)}")
 print(
     "[SMTP]"
