@@ -57,7 +57,7 @@ class NotificationPoller:
         모든 구독자에게 순서대로 전달.
         """
         sql = """
-            SELECT notification_id, user_id, type, related_id, title, body, link_url, created_at, is_read
+            SELECT notification_id, id, type, related_id, title, body, link_url, created_at, is_read
             FROM notifications
             WHERE (%s IS NULL OR created_at > %s)
             ORDER BY created_at ASC
