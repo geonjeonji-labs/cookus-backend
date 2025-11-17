@@ -243,6 +243,30 @@ class AuthService:
     def clear_refresh_cookie(self, response) -> None:
         response.delete_cookie(key="refresh", path=self.refresh_cookie_path)
 
+    def set_dashboard_cookie(self, response, access_token: str) -> None:
+        """Expose the access JWT via HttpOnly cookie for the dashboard app."""
+        if not access_token:
+            return
+        domain, path, samesite = self._dashboard_cookie_params()
+        response.set_cookie(
+            key=settings.dashboard_cookie_name,
+            value=access_token,
+            httponly=True,
+            secure=settings.dashboard_cookie_secure,
+            samesite=samesite,
+            path=path,
+            domain=domain,
+            max_age=settings.access_minutes * 60,
+        )
+
+    def clear_dashboard_cookie(self, response) -> None:
+        domain, path, _ = self._dashboard_cookie_params()
+        response.delete_cookie(
+            key=settings.dashboard_cookie_name,
+            path=path,
+            domain=domain,
+        )
+
     def _issue_tokens(self, user_id: str, user_agent: Optional[str]) -> AuthTokens:
         access, refresh, jti, refresh_exp = token_service.issue_tokens(user_id)
         self._save_refresh_jti(user_id, jti, refresh_exp, user_agent)
@@ -260,6 +284,15 @@ class AuthService:
                 """,
                 (user_id, hash_value(jti), expires_at, user_agent),
             )
+
+    def _dashboard_cookie_params(self) -> Tuple[Optional[str], str, str]:
+        """Compute reusable cookie attributes (domain/path/samesite)."""
+        domain = (settings.dashboard_cookie_domain or "").strip() or None
+        path = settings.dashboard_cookie_path or "/"
+        raw_samesite = (settings.dashboard_cookie_samesite or "None").strip().lower()
+        if raw_samesite not in {"lax", "strict", "none"}:
+            raw_samesite = "lax"
+        return domain, path, raw_samesite
 
 
 auth_service = AuthService()

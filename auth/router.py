@@ -13,6 +13,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def auth_login(payload: AuthLoginIn, request: Request, response: Response):
     user, tokens = auth_service.login(payload.id, payload.password, request.headers.get("user-agent"))
     auth_service.set_refresh_cookie(response, tokens.refresh_token)
+    auth_service.set_dashboard_cookie(response, tokens.access_token)
     return {"accessToken": tokens.access_token, "user": user}
 
 
@@ -21,6 +22,7 @@ def auth_signup(payload: AuthSignupIn, request: Request, response: Response):
     # 필수값은 Pydantic 모델에서 검증
     user, tokens = auth_service.signup(payload.dict(), request.headers.get("user-agent"))
     auth_service.set_refresh_cookie(response, tokens.refresh_token)
+    auth_service.set_dashboard_cookie(response, tokens.access_token)
     return {"accessToken": tokens.access_token, "user": user}
 
 
@@ -30,6 +32,7 @@ def auth_refresh(request: Request, response: Response, refresh: Optional[str] = 
         raise HTTPException(401, "No refresh cookie")
     access, new_refresh = auth_service.refresh(refresh, user_agent=request.headers.get("user-agent"))
     auth_service.set_refresh_cookie(response, new_refresh)
+    auth_service.set_dashboard_cookie(response, access)
     return {"accessToken": access}
 
 
@@ -37,6 +40,7 @@ def auth_refresh(request: Request, response: Response, refresh: Optional[str] = 
 def auth_logout(response: Response, refresh: Optional[str] = Cookie(default=None)):
     auth_service.logout(refresh)
     auth_service.clear_refresh_cookie(response)
+    auth_service.clear_dashboard_cookie(response)
     return {"ok": True}
 
 

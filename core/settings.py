@@ -37,6 +37,12 @@ class Settings:
     smtp_starttls: bool = field(default_factory=lambda: _bool_env("SMTP_STARTTLS", default=False))
     smtp_ssl_tls: bool = field(default_factory=lambda: _bool_env("SMTP_SSL_TLS", default=False))
 
+    dashboard_cookie_name: str = field(default_factory=lambda: os.getenv("DASHBOARD_COOKIE_NAME", "cookus_jwt"))
+    dashboard_cookie_domain: str = field(default_factory=lambda: os.getenv("DASHBOARD_COOKIE_DOMAIN", ""))
+    dashboard_cookie_path: str = field(default_factory=lambda: os.getenv("DASHBOARD_COOKIE_PATH", "/"))
+    dashboard_cookie_secure: bool = field(default_factory=lambda: _bool_env("DASHBOARD_COOKIE_SECURE", default=True))
+    dashboard_cookie_samesite: str = field(default_factory=lambda: os.getenv("DASHBOARD_COOKIE_SAMESITE", "None"))
+
     db_host: str = field(default_factory=lambda: os.getenv("DB_HOST", "127.0.0.1"))
     db_port: int = field(default_factory=lambda: int(os.getenv("DB_PORT", "3306")))
     db_user: str = field(default_factory=lambda: os.getenv("DB_USER", ""))
@@ -71,3 +77,4 @@ print(
     f" port={settings.db_port}"
     f" name={settings.db_name}"
 )
+
