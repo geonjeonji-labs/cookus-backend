@@ -93,9 +93,8 @@ def create_plan(body: dict, current_user: str = Depends(get_current_user)):
 def delete_plan(plan_id: int, current_user: str = Depends(get_current_user)):
   uid = current_user
   with get_conn() as conn, conn.cursor() as cur:
-    # Soft delete (keep row for historical checks) and clear recorded checks
+    # Soft delete (keep row for historical checks)
     cur.execute("UPDATE supplement_plans SET deleted_at=NOW() WHERE user_id=%s AND plan_id=%s", (uid, plan_id))
-    cur.execute("DELETE FROM supplement_checks WHERE user_id=%s AND plan_id=%s", (uid, plan_id))
   return {"ok": True}
 
 
@@ -166,7 +165,7 @@ def month_status(month: str, current_user: str = Depends(get_current_user)):
 def daily(date: str, current_user: str = Depends(get_current_user)):
   uid = current_user
   with get_conn() as conn, conn.cursor() as cur:
-    # Only return plans that are still active; delete should hide them across dates
+    # Show plans that were active on the requested date (created_at <= date < deleted_at)
     sql = (
       """
       SELECT p.plan_id, p.supplement_name, p.time_slot,
@@ -174,11 +173,13 @@ def daily(date: str, current_user: str = Depends(get_current_user)):
       FROM supplement_plans p
       LEFT JOIN supplement_checks c
         ON c.user_id=%s AND c.plan_id=p.plan_id AND c.date=%s
-      WHERE p.user_id=%s AND p.deleted_at IS NULL
+      WHERE p.user_id=%s
+        AND DATE(p.created_at) <= %s
+        AND (p.deleted_at IS NULL OR DATE(p.deleted_at) > %s)
       ORDER BY p.created_at DESC
       """
     )
-    cur.execute(sql, (uid, date, uid))
+    cur.execute(sql, (uid, date, uid, date, date))
     return cur.fetchall()
 
 
