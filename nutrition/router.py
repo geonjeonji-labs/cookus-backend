@@ -165,24 +165,19 @@ def month_status(month: str, current_user: str = Depends(get_current_user)):
 def daily(date: str, current_user: str = Depends(get_current_user)):
   uid = current_user
   with get_conn() as conn, conn.cursor() as cur:
-    # Include active plans + any plans that have a check on the requested date (even if soft-deleted)
+    # Only return plans that are still active; delete should hide them across dates
     sql = (
       """
-      WITH base AS (
-        SELECT plan_id FROM supplement_plans WHERE user_id=%s AND deleted_at IS NULL
-        UNION
-        SELECT DISTINCT plan_id FROM supplement_checks WHERE user_id=%s AND date=%s
-      )
       SELECT p.plan_id, p.supplement_name, p.time_slot,
              COALESCE(c.taken, 0) AS taken
-      FROM base b
-      JOIN supplement_plans p ON p.plan_id=b.plan_id AND p.user_id=%s
+      FROM supplement_plans p
       LEFT JOIN supplement_checks c
         ON c.user_id=%s AND c.plan_id=p.plan_id AND c.date=%s
+      WHERE p.user_id=%s AND p.deleted_at IS NULL
       ORDER BY p.created_at DESC
       """
     )
-    cur.execute(sql, (uid, uid, date, uid, uid, date))
+    cur.execute(sql, (uid, date, uid))
     return cur.fetchall()
 
 
