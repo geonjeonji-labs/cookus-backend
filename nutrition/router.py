@@ -174,8 +174,8 @@ def daily(date: str, current_user: str = Depends(get_current_user)):
       LEFT JOIN supplement_checks c
         ON c.user_id=%s AND c.plan_id=p.plan_id AND c.date=%s
       WHERE p.user_id=%s
-        AND DATE(p.created_at) <= %s
-        AND (p.deleted_at IS NULL OR DATE(p.deleted_at) > %s)
+        AND DATE(p.created_at) <= DATE(%s)
+        AND (p.deleted_at IS NULL OR DATE(p.deleted_at) > DATE(%s))
       ORDER BY p.created_at DESC
       """
     )
