@@ -93,8 +93,9 @@ def create_plan(body: dict, current_user: str = Depends(get_current_user)):
 def delete_plan(plan_id: int, current_user: str = Depends(get_current_user)):
   uid = current_user
   with get_conn() as conn, conn.cursor() as cur:
-    # Soft delete (keep row for historical checks)
+    # Soft delete (keep row for historical checks) and clear recorded checks
     cur.execute("UPDATE supplement_plans SET deleted_at=NOW() WHERE user_id=%s AND plan_id=%s", (uid, plan_id))
+    cur.execute("DELETE FROM supplement_checks WHERE user_id=%s AND plan_id=%s", (uid, plan_id))
   return {"ok": True}
 
 
