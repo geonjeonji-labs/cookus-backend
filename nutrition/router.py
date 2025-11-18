@@ -95,6 +95,11 @@ def delete_plan(plan_id: int, current_user: str = Depends(get_current_user)):
   with get_conn() as conn, conn.cursor() as cur:
     # Soft delete (keep row for historical checks)
     cur.execute("UPDATE supplement_plans SET deleted_at=NOW() WHERE user_id=%s AND plan_id=%s", (uid, plan_id))
+    # Remove any checks from today forward so deleted plans don't reappear for current/future dates
+    cur.execute(
+      "DELETE FROM supplement_checks WHERE user_id=%s AND plan_id=%s AND date >= CURDATE()",
+      (uid, plan_id)
+    )
   return {"ok": True}
 
 
