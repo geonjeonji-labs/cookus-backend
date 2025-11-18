@@ -1,3 +1,5 @@
+from datetime import datetime, date
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
@@ -90,16 +92,28 @@ def create_plan(body: dict, current_user: str = Depends(get_current_user)):
 
 
 @router.delete('/nutrition/plans/{plan_id}')
-def delete_plan(plan_id: int, current_user: str = Depends(get_current_user)):
+def delete_plan(plan_id: int, delete_from: Optional[str] = None, current_user: str = Depends(get_current_user)):
   uid = current_user
+  cutoff: Optional[date] = None
+  if delete_from:
+    try:
+      cutoff = datetime.strptime(delete_from, '%Y-%m-%d').date()
+    except ValueError:
+      raise HTTPException(400, 'invalid date')
   with get_conn() as conn, conn.cursor() as cur:
     # Soft delete (keep row for historical checks)
     cur.execute("UPDATE supplement_plans SET deleted_at=NOW() WHERE user_id=%s AND plan_id=%s", (uid, plan_id))
-    # Remove any checks from today forward so deleted plans don't reappear for current/future dates
-    cur.execute(
-      "DELETE FROM supplement_checks WHERE user_id=%s AND plan_id=%s AND date >= CURDATE()",
-      (uid, plan_id)
-    )
+    # Remove any checks from the provided date (or today) forward so deleted plans don't reappear
+    if cutoff:
+      cur.execute(
+        "DELETE FROM supplement_checks WHERE user_id=%s AND plan_id=%s AND date >= %s",
+        (uid, plan_id, cutoff)
+      )
+    else:
+      cur.execute(
+        "DELETE FROM supplement_checks WHERE user_id=%s AND plan_id=%s AND date >= CURDATE()",
+        (uid, plan_id)
+      )
   return {"ok": True}
 
 
